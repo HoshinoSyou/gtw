@@ -3,103 +3,62 @@ package gtw
 import (
 	"log"
 	"net/http"
+	"path"
+	"strings"
 )
 
+// 用上下文定义路由方法
 type HandlerFunc func(ctx *Context)
 
-type Middleware func(HandlerFunc)
+// 用路由方法定义中间件（方法）
+type MiddlewareFunc func(HandlerFunc) HandlerFunc
 
+// 定义一个含*router的结构体，即顶级框架实例
+// 且和RoutersGroup互相嵌套
 type Routers struct {
 	router *router
-	path   string
+	RoutersGroup
 }
 
-//New方法创建一个路由引擎
+//定义一个空接口，用于传输各种键值对的数据
+//在进行JSON、XML渲染时需要用到
+type G map[string]interface{}
+
+// New方法创建一个实例化一个Routers
 func New() *Routers {
-	return &Routers{&router{Handlers: make(map[string]HandlerFunc)}, nil}
+	routers := &Routers{
+		router: &router{
+			Handlers: make(map[string]HandlerFunc),
+		},
+	}
+	routers.RoutersGroup = RoutersGroup{
+		routers: routers,
+	}
+	return routers
 }
 
-/*
-func (routers *Routers) GET(relativePath string, handlerFunc HandlerFunc) {
+// 写一个addHandle方法统一添加路由
+func (routers *Routers) addHandler(method string, relativePath string, handlerFunc HandlerFunc) {
+	if relativePath == "" {
+		relativePath = "/" + relativePath
+	}
 	if relativePath[0] != '/' {
 		relativePath = "/" + relativePath
 	}
-	methodAndPath := "GET" + "." + relativePath
+	finalPath := path.Join(routers.RoutersGroup.path, relativePath)
+	finalPath = strings.Replace(finalPath, "\n", "", -1)
+	methodAndPath := method + "." + finalPath
 	routers.router.Handlers[methodAndPath] = handlerFunc
 }
 
-func (routers *Routers) POST(relativePath string, handlerFunc HandlerFunc) {
-	if relativePath[0] != '/' {
-		relativePath = "/" + relativePath
-	}
-	methodAndPath := "POST" + "." + relativePath
-	routers.router.Handlers[methodAndPath] = handlerFunc
-}
-
-func (routers *Routers) PUT(relativePath string, handlerFunc HandlerFunc) {
-	if relativePath[0] != '/' {
-		relativePath = "/" + relativePath
-	}
-	methodAndPath := "PUT" + "." + relativePath
-	routers.router.Handlers[methodAndPath] = handlerFunc
-}
-
-func (routers *Routers) DELETE(relativePath string, handlerFunc HandlerFunc) {
-	if relativePath[0] != '/' {
-		relativePath = "/" + relativePath
-	}
-	methodAndPath := "DELETE" + "." + relativePath
-	routers.router.Handlers[methodAndPath] = handlerFunc
-}*/
-
-//路由组，仅适用于分组
-func (routers *Routers) Group(relativePath string) *Routers {
-	if relativePath[0] != '/' {
-		relativePath = "/" + relativePath
-	}
-	routers.path = relativePath
-	return &Routers{
-		router: make(map[string]),
-		path:   "",
-	}
-}
-
-//写一个addHandle方法统一添加路由
-func (routers *Routers) addHandle(method string, relativePath string, handlerFunc HandlerFunc) {
-	if relativePath[0] != '/' {
-		relativePath = "/" + relativePath
-	}
-	path := routers.path + relativePath
-	methodAndPath := method + "." + path
-	routers.router.Handlers[methodAndPath] = handlerFunc
-}
-
-//GET请求方式
-func (routers *Routers) GET(relativePath string, handlerFunc HandlerFunc) {
-	routers.addHandle("GET", relativePath, handlerFunc)
-}
-
-//POST请求方式
-func (routers *Routers) POST(relativePath string, handlerFunc HandlerFunc) {
-	routers.addHandle("POST", relativePath, handlerFunc)
-}
-
-//PUT请求方式
-func (routers *Routers) PUT(relativePath string, handlerFunc HandlerFunc) {
-	routers.addHandle("PUT", relativePath, handlerFunc)
-}
-
-//DELETE请求方式
-func (routers *Routers) DELETE(relativePath string, handlerFunc HandlerFunc) {
-	routers.addHandle("DELETE", relativePath, handlerFunc)
-}
-
+// 开启HTTP服务，将http.ResponseWriter与*http.Request传给上下文Context
 func (routers *Routers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	methodAndPath := req.Method + "." + req.URL.Path
 	handler, ok := routers.router.Handlers[methodAndPath]
 	if !ok {
 		log.Printf("%s :404 not found", methodAndPath)
 	} else {
+		log.Printf("%s :200 succesefully", methodAndPath)
 		handler(&Context{
 			responseWriter: w,
 			request:        req,
@@ -107,10 +66,7 @@ func (routers *Routers) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (routers *Routers) Use(middleware ...Middleware)  {
-	
-}
-
+// 以port端口运行路由
 func (routers *Routers) Run(port string) error {
 	if port == "" {
 		port = ":8080"
